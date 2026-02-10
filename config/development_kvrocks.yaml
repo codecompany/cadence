@@ -1,0 +1,19 @@
+persistence:
+  defaultStore: kvrocks-default
+  visibilityStore: kvrocks-visibility
+  numHistoryShards: 4
+  datastores:
+    kvrocks-default:
+      nosql:
+        pluginName: "kvrocks"
+        hosts: "127.0.0.1"
+        port: 6666
+        # For KVRocks, `keyspace` is treated as a key prefix/namespace.
+        keyspace: "cadence"
+    kvrocks-visibility:
+      nosql:
+        pluginName: "kvrocks"
+        hosts: "127.0.0.1"
+        port: 6666
+        keyspace: "cadence_visibility"
+

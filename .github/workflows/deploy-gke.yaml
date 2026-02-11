@@ -6,6 +6,10 @@ on:
       - main
   workflow_dispatch:
 
+concurrency:
+  group: deploy-cadence-gke
+  cancel-in-progress: true
+
 env:
   CLUSTER_NAME: ${{ secrets.CLUSTER_NAME }}
   CLUSTER_ZONE: ${{ secrets.CLUSTER_ZONE }}
@@ -94,7 +98,7 @@ jobs:
             --set-string config.persistence.database.kvrocks.password="$KVROCKS_PASSWORD" \
             --wait \
             --timeout 15m \
-            --atomic
+            --rollback-on-failure
 
       - name: Verify deployment rollout
         run: |

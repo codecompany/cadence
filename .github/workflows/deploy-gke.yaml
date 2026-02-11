@@ -28,6 +28,21 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Validate required secrets
+        env:
+          GCP_SA_KEY: ${{ secrets.GCP_SA_KEY }}
+        run: |
+          missing=0
+          for key in GCP_SA_KEY GCP_PROJECT_ID CLUSTER_NAME CLUSTER_ZONE KVROCKS_PASSWORD; do
+            if [ -z "${!key}" ]; then
+              echo "Missing secret: $key" >&2
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
       - name: Authenticate to Google Cloud
         uses: google-github-actions/auth@v2
         with:
@@ -46,19 +61,6 @@ jobs:
 
       - name: Export image tag
         run: echo "IMAGE_TAG=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
-
-      - name: Validate required secrets
-        run: |
-          missing=0
-          for key in GCP_PROJECT_ID CLUSTER_NAME CLUSTER_ZONE KVROCKS_PASSWORD; do
-            if [ -z "${!key}" ]; then
-              echo "Missing secret: $key" >&2
-              missing=1
-            fi
-          done
-          if [ "$missing" -ne 0 ]; then
-            exit 1
-          fi
 
       - name: Build and push Cadence server image
         run: |

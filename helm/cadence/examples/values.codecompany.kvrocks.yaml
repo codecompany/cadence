@@ -24,6 +24,12 @@ postgresql:
 mysql:
   enabled: false
 
+# Disable optional bundled dependencies from parent chart.
+elasticsearch:
+  enabled: false
+kafka:
+  enabled: false
+
 web:
   ingress:
     enabled: true

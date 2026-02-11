@@ -1,0 +1,44 @@
+# Code Company production profile for Cadence using KVRocks persistence.
+# Sensitive values (passwords) are injected by CI via --set/Secrets.
+
+config:
+  persistence:
+    database:
+      driver: kvrocks
+      kvrocks:
+        hosts: kvrocks.kvrocks.svc.cluster.local
+        port: 6379
+        keyspace: cadence
+        visibilityKeyspace: cadence_visibility
+
+schema:
+  # KVRocks is schema-less; no schema job is required.
+  serverJob:
+    enabled: false
+
+# Disable embedded databases; Code Company uses external services.
+cassandra:
+  enabled: false
+postgresql:
+  enabled: false
+mysql:
+  enabled: false
+
+web:
+  ingress:
+    enabled: true
+    className: traefik
+    annotations:
+      cert-manager.io/cluster-issuer: letsencrypt-production
+      traefik.ingress.kubernetes.io/redirect-entry-point-from: web
+      traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+      traefik.ingress.kubernetes.io/router.middlewares: cadence-tikti-auth@kubernetescrd
+    hosts:
+      - host: cadence.codecompany.com.br
+        paths:
+          - path: /
+            pathType: Prefix
+    tls:
+      - secretName: cadence-codecompany-com-br-tls
+        hosts:
+          - cadence.codecompany.com.br

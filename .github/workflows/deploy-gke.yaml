@@ -1,0 +1,103 @@
+name: Deploy Cadence (GKE)
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  CLUSTER_NAME: ${{ secrets.CLUSTER_NAME }}
+  CLUSTER_ZONE: ${{ secrets.CLUSTER_ZONE }}
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  KVROCKS_PASSWORD: ${{ secrets.KVROCKS_PASSWORD }}
+  REGISTRY_HOST: gcr.io
+  IMAGE_NAME: cadence-server
+  RELEASE_NAME: cadence
+  NAMESPACE: cadence
+  CHART_PATH: ./helm/cadence
+  VALUES_FILE: ./helm/cadence/examples/values.codecompany.kvrocks.yaml
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Setup gcloud
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.GCP_PROJECT_ID }}
+
+      - name: Install gke-gcloud-auth-plugin
+        run: gcloud components install gke-gcloud-auth-plugin --quiet
+
+      - name: Configure Docker for gcr.io
+        run: gcloud auth configure-docker --quiet
+
+      - name: Export image tag
+        run: echo "IMAGE_TAG=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - name: Validate required secrets
+        run: |
+          missing=0
+          for key in GCP_PROJECT_ID CLUSTER_NAME CLUSTER_ZONE KVROCKS_PASSWORD; do
+            if [ -z "${!key}" ]; then
+              echo "Missing secret: $key" >&2
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Build and push Cadence server image
+        run: |
+          IMAGE_URI="${REGISTRY_HOST}/${GCP_PROJECT_ID}/${IMAGE_NAME}:${IMAGE_TAG}"
+          docker build --build-arg TARGET=server -t "$IMAGE_URI" .
+          docker push "$IMAGE_URI"
+          echo "IMAGE_URI=$IMAGE_URI" >> "$GITHUB_ENV"
+
+      - name: Fetch GKE credentials
+        run: |
+          gcloud container clusters get-credentials "$CLUSTER_NAME" \
+            --zone "$CLUSTER_ZONE" \
+            --project "$GCP_PROJECT_ID"
+
+      - name: Verify required Traefik middleware
+        run: |
+          kubectl -n "$NAMESPACE" get middlewares.traefik.io tikti-auth >/dev/null
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v4
+
+      - name: Deploy with Helm
+        run: |
+          IMAGE_REPO="${REGISTRY_HOST}/${GCP_PROJECT_ID}/${IMAGE_NAME}"
+          helm upgrade --install "$RELEASE_NAME" "$CHART_PATH" \
+            --namespace "$NAMESPACE" \
+            --create-namespace \
+            -f "$VALUES_FILE" \
+            --set global.image.repository="$IMAGE_REPO" \
+            --set global.image.tag="$IMAGE_TAG" \
+            --set-string config.persistence.database.kvrocks.password="$KVROCKS_PASSWORD" \
+            --wait \
+            --timeout 15m \
+            --atomic
+
+      - name: Verify deployment rollout
+        run: |
+          kubectl -n "$NAMESPACE" rollout status deployment/${RELEASE_NAME}-frontend --timeout=5m
+          kubectl -n "$NAMESPACE" rollout status deployment/${RELEASE_NAME}-history --timeout=5m
+          kubectl -n "$NAMESPACE" rollout status deployment/${RELEASE_NAME}-matching --timeout=5m
+          kubectl -n "$NAMESPACE" rollout status deployment/${RELEASE_NAME}-worker --timeout=5m
+          kubectl -n "$NAMESPACE" rollout status deployment/${RELEASE_NAME}-web --timeout=5m

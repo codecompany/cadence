@@ -819,6 +819,16 @@ data:
       {{- end }}
     {{- end }}
 
+    # Shard distributor matching configuration
+    # Cadence matching requires at least one namespace configuration.
+    shard-distributor-matching:
+      namespaces:
+        - namespace: {{ `{{ default .Env.SHARD_DISTRIBUTOR_MATCHING_NAMESPACE "cadence-matching" }}` }}
+          heartbeat_interval: {{ `{{ default .Env.SHARD_DISTRIBUTOR_MATCHING_HEARTBEAT_INTERVAL "1s" }}` }}
+          migration_mode: {{ `{{ default .Env.SHARD_DISTRIBUTOR_MATCHING_MIGRATION_MODE "local_pass" }}` }}
+          ttl_shard: {{ `{{ default .Env.SHARD_DISTRIBUTOR_MATCHING_TTL_SHARD "5m" }}` }}
+          ttl_report: {{ `{{ default .Env.SHARD_DISTRIBUTOR_MATCHING_TTL_REPORT "1m" }}` }}
+
     {{ if .Values.config.asyncWorkflowQueues.enabled -}}
     # Async workflow queues configuration
     asyncWorkflowQueues:

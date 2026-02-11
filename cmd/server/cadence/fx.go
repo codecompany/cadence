@@ -146,14 +146,40 @@ func (a *App) Stop(ctx context.Context) error {
 
 func (a *App) verifySchema(ctx context.Context) error {
 	// cassandra schema version validation
-	if err := cassandra.VerifyCompatibleVersion(a.cfg.Persistence, gocql.Quorum); err != nil {
-		return fmt.Errorf("cassandra schema version compatibility check failed: %w", err)
+	if requiresCassandraSchemaCheck(a.cfg.Persistence) {
+		if err := cassandra.VerifyCompatibleVersion(a.cfg.Persistence, gocql.Quorum); err != nil {
+			return fmt.Errorf("cassandra schema version compatibility check failed: %w", err)
+		}
 	}
 	// sql schema version validation
 	if err := sql.VerifyCompatibleVersion(a.cfg.Persistence); err != nil {
 		return fmt.Errorf("sql schema version compatibility check failed: %w", err)
 	}
 	return nil
+}
+
+func requiresCassandraSchemaCheck(p config.Persistence) bool {
+	if ds, ok := p.DataStores[p.DefaultStore]; ok && hasCassandraNoSQL(ds) {
+		return true
+	}
+	if ds, ok := p.DataStores[p.VisibilityStore]; ok && hasCassandraNoSQL(ds) {
+		return true
+	}
+	return false
+}
+
+func hasCassandraNoSQL(ds config.DataStore) bool {
+	if ds.NoSQL != nil {
+		return ds.NoSQL.PluginName == "cassandra"
+	}
+	if ds.ShardedNoSQL != nil {
+		for _, conn := range ds.ShardedNoSQL.Connections {
+			if conn.NoSQLPlugin != nil && conn.NoSQLPlugin.PluginName == "cassandra" {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 type serviceContext struct {

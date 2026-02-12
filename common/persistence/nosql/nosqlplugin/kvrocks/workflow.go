@@ -97,6 +97,7 @@ func (db *DB) buildMutableState(req *nosqlplugin.WorkflowExecutionRequest) *pers
 	if req.Checksums != nil {
 		state.Checksum = *req.Checksums
 	}
+	sanitizeMutableState(state)
 	return state
 }
 
@@ -202,6 +203,7 @@ func (db *DB) applyExecutionUpdate(rec *workflowExecutionRecord, req *nosqlplugi
 		return fmt.Errorf("kvrocks: unknown event buffer write mode %v", req.EventBufferWriteMode)
 	}
 
+	sanitizeMutableState(rec.State)
 	return nil
 }
 
@@ -329,6 +331,7 @@ func (db *DB) SelectWorkflowExecution(ctx context.Context, shardID int, domainID
 	if rec.State == nil {
 		return nil, fmt.Errorf("kvrocks: SelectWorkflowExecution: missing state")
 	}
+	sanitizeMutableState(rec.State)
 	return rec.State, nil
 }
 
@@ -387,6 +390,7 @@ func (db *DB) SelectAllWorkflowExecutions(ctx context.Context, shardID int, page
 		if rec.State == nil || rec.State.ExecutionInfo == nil {
 			continue
 		}
+		sanitizeMutableState(rec.State)
 		out = append(out, &persistence.InternalListConcreteExecutionsEntity{
 			ExecutionInfo:    rec.State.ExecutionInfo,
 			VersionHistories: rec.State.VersionHistories,
@@ -1004,6 +1008,9 @@ func (db *DB) SelectTransferTasksOrderByTaskID(ctx context.Context, shardID, pag
 		next = []byte(members[pageSize-1])
 		members = members[:pageSize]
 	}
+	if len(members) == 0 {
+		return nil, next, nil
+	}
 	keys := make([]string, 0, len(members))
 	taskIDs := make([]int64, 0, len(members))
 	for _, m := range members {
@@ -1098,6 +1105,9 @@ func (db *DB) SelectTimerTasksOrderByVisibilityTime(ctx context.Context, shardID
 	if len(members) > pageSize {
 		next = []byte(members[pageSize-1])
 		members = members[:pageSize]
+	}
+	if len(members) == 0 {
+		return nil, next, nil
 	}
 	keys := make([]string, 0, len(members))
 	meta := make([]struct {
@@ -1201,6 +1211,9 @@ func (db *DB) SelectReplicationTasksOrderByTaskID(ctx context.Context, shardID, 
 	if len(members) > pageSize {
 		next = []byte(members[pageSize-1])
 		members = members[:pageSize]
+	}
+	if len(members) == 0 {
+		return nil, next, nil
 	}
 	keys := make([]string, 0, len(members))
 	taskIDs := make([]int64, 0, len(members))
@@ -1358,6 +1371,9 @@ func (db *DB) SelectReplicationDLQTasksOrderByTaskID(ctx context.Context, shardI
 		next = []byte(members[pageSize-1])
 		members = members[:pageSize]
 	}
+	if len(members) == 0 {
+		return nil, next, nil
+	}
 	keys := make([]string, 0, len(members))
 	taskIDs := make([]int64, 0, len(members))
 	for _, m := range members {
@@ -1442,6 +1458,7 @@ func (db *DB) SelectActiveClusterSelectionPolicy(ctx context.Context, shardID in
 	if err := unmarshalJSON(b, blob); err != nil {
 		return nil, err
 	}
+	blob = nilIfEmptyDataBlob(blob)
 	return &nosqlplugin.ActiveClusterSelectionPolicyRow{
 		ShardID:    shardID,
 		DomainID:   domainID,

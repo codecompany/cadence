@@ -289,6 +289,9 @@ func (db *DB) SelectAllHistoryTrees(ctx context.Context, nextPageToken []byte, p
 		next = []byte(members[pageSize-1])
 		members = members[:pageSize]
 	}
+	if len(members) == 0 {
+		return nil, next, nil
+	}
 
 	// Fetch rows.
 	keys := make([]string, 0, len(members))

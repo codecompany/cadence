@@ -144,6 +144,9 @@ func (db *DB) SelectMessagesBetween(ctx context.Context, request nosqlplugin.Sel
 		next = []byte(ids[request.PageSize-1])
 		ids = ids[:request.PageSize]
 	}
+	if len(ids) == 0 {
+		return &nosqlplugin.SelectMessagesBetweenResponse{Rows: nil, NextPageToken: next}, nil
+	}
 
 	keys := make([]string, 0, len(ids))
 	parsed := make([]int64, 0, len(ids))

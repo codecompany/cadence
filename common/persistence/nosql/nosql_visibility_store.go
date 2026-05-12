@@ -22,6 +22,7 @@ package nosql
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -42,6 +43,36 @@ const (
 type nosqlVisibilityStore struct {
 	sortByCloseTime bool
 	nosqlStore
+}
+
+func visibilitySearchAttributes(attrs map[string][]byte) map[string]interface{} {
+	if len(attrs) == 0 {
+		return nil
+	}
+	out := make(map[string]interface{}, len(attrs))
+	for k, v := range attrs {
+		out[k] = json.RawMessage(v)
+	}
+	return out
+}
+
+func executionStatusFromCloseStatus(status types.WorkflowExecutionCloseStatus) types.WorkflowExecutionStatus {
+	switch status {
+	case types.WorkflowExecutionCloseStatusCompleted:
+		return types.WorkflowExecutionStatusCompleted
+	case types.WorkflowExecutionCloseStatusFailed:
+		return types.WorkflowExecutionStatusFailed
+	case types.WorkflowExecutionCloseStatusCanceled:
+		return types.WorkflowExecutionStatusCanceled
+	case types.WorkflowExecutionCloseStatusTerminated:
+		return types.WorkflowExecutionStatusTerminated
+	case types.WorkflowExecutionCloseStatusContinuedAsNew:
+		return types.WorkflowExecutionStatusContinuedAsNew
+	case types.WorkflowExecutionCloseStatusTimedOut:
+		return types.WorkflowExecutionStatusTimedOut
+	default:
+		return types.WorkflowExecutionStatusCompleted
+	}
 }
 
 // newNoSQLVisibilityStore is used to create an instance of VisibilityStore implementation
@@ -71,17 +102,23 @@ func (v *nosqlVisibilityStore) RecordWorkflowExecutionStarted(
 	err := v.db.InsertVisibility(ctx, ttl, &nosqlplugin.VisibilityRowForInsert{
 		DomainID: request.DomainUUID,
 		VisibilityRow: nosqlplugin.VisibilityRow{
-			WorkflowID:    request.WorkflowID,
-			RunID:         request.RunID,
-			TypeName:      request.WorkflowTypeName,
-			StartTime:     request.StartTimestamp,
-			ExecutionTime: request.ExecutionTimestamp,
-			Memo:          request.Memo,
-			TaskList:      request.TaskList,
-			IsCron:        request.IsCron,
-			NumClusters:   request.NumClusters,
-			UpdateTime:    request.UpdateTimestamp,
-			ShardID:       request.ShardID,
+			WorkflowID:             request.WorkflowID,
+			RunID:                  request.RunID,
+			TypeName:               request.WorkflowTypeName,
+			StartTime:              request.StartTimestamp,
+			ExecutionTime:          request.ExecutionTimestamp,
+			Memo:                   request.Memo,
+			TaskList:               request.TaskList,
+			IsCron:                 request.IsCron,
+			CronSchedule:           request.CronSchedule,
+			NumClusters:            request.NumClusters,
+			ClusterAttributeScope:  request.ClusterAttributeScope,
+			ClusterAttributeName:   request.ClusterAttributeName,
+			UpdateTime:             request.UpdateTimestamp,
+			SearchAttributes:       visibilitySearchAttributes(request.SearchAttributes),
+			ShardID:                request.ShardID,
+			ExecutionStatus:        request.ExecutionStatus,
+			ScheduledExecutionTime: request.ScheduledExecutionTime,
 		},
 	})
 	if err != nil {
@@ -101,24 +138,32 @@ func (v *nosqlVisibilityStore) RecordWorkflowExecutionClosed(
 		retention = defaultCloseTTLSeconds * time.Second
 	}
 
+	executionStatus := executionStatusFromCloseStatus(request.Status)
 	err := v.db.UpdateVisibility(ctx, int64(retention.Seconds()), &nosqlplugin.VisibilityRowForUpdate{
 		DomainID:          request.DomainUUID,
 		UpdateOpenToClose: true,
 		VisibilityRow: nosqlplugin.VisibilityRow{
-			WorkflowID:    request.WorkflowID,
-			RunID:         request.RunID,
-			TypeName:      request.WorkflowTypeName,
-			StartTime:     request.StartTimestamp,
-			ExecutionTime: request.ExecutionTimestamp,
-			Memo:          request.Memo,
-			TaskList:      request.TaskList,
-			IsCron:        request.IsCron,
-			NumClusters:   request.NumClusters,
+			WorkflowID:            request.WorkflowID,
+			RunID:                 request.RunID,
+			TypeName:              request.WorkflowTypeName,
+			StartTime:             request.StartTimestamp,
+			ExecutionTime:         request.ExecutionTimestamp,
+			Memo:                  request.Memo,
+			TaskList:              request.TaskList,
+			IsCron:                request.IsCron,
+			CronSchedule:          request.CronSchedule,
+			NumClusters:           request.NumClusters,
+			ClusterAttributeScope: request.ClusterAttributeScope,
+			ClusterAttributeName:  request.ClusterAttributeName,
 			// closed workflow attributes
-			Status:        &request.Status,
-			CloseTime:     request.CloseTimestamp,
-			HistoryLength: request.HistoryLength,
-			UpdateTime:    request.UpdateTimestamp,
+			Status:                 &request.Status,
+			CloseTime:              request.CloseTimestamp,
+			HistoryLength:          request.HistoryLength,
+			UpdateTime:             request.UpdateTimestamp,
+			SearchAttributes:       visibilitySearchAttributes(request.SearchAttributes),
+			ShardID:                request.ShardID,
+			ExecutionStatus:        executionStatus,
+			ScheduledExecutionTime: request.ScheduledExecutionTime,
 		},
 	})
 
@@ -143,7 +188,34 @@ func (v *nosqlVisibilityStore) UpsertWorkflowExecution(
 	if persistence.IsNopUpsertWorkflowRequest(request) {
 		return nil
 	}
-	return persistence.ErrVisibilityOperationNotSupported
+
+	ttl := int64(request.WorkflowTimeout.Seconds()) + openExecutionTTLBuffer
+	err := v.db.InsertVisibility(ctx, ttl, &nosqlplugin.VisibilityRowForInsert{
+		DomainID: request.DomainUUID,
+		VisibilityRow: nosqlplugin.VisibilityRow{
+			WorkflowID:             request.WorkflowID,
+			RunID:                  request.RunID,
+			TypeName:               request.WorkflowTypeName,
+			StartTime:              request.StartTimestamp,
+			ExecutionTime:          request.ExecutionTimestamp,
+			Memo:                   request.Memo,
+			TaskList:               request.TaskList,
+			IsCron:                 request.IsCron,
+			CronSchedule:           request.CronSchedule,
+			NumClusters:            request.NumClusters,
+			ClusterAttributeScope:  request.ClusterAttributeScope,
+			ClusterAttributeName:   request.ClusterAttributeName,
+			UpdateTime:             request.UpdateTimestamp,
+			SearchAttributes:       visibilitySearchAttributes(request.SearchAttributes),
+			ShardID:                int16(request.ShardID),
+			ExecutionStatus:        request.ExecutionStatus,
+			ScheduledExecutionTime: time.Unix(0, request.ScheduledExecutionTimestamp),
+		},
+	})
+	if err != nil {
+		return convertCommonErrors(v.db, "UpsertWorkflowExecution", err)
+	}
+	return nil
 }
 
 func (v *nosqlVisibilityStore) ListOpenWorkflowExecutions(

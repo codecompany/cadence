@@ -332,6 +332,13 @@ func TestDataBlob_GetData(t *testing.T) {
 	}
 }
 
+func TestDeserializeVisibilityMemo_EmptyBlob(t *testing.T) {
+	memo, err := NewPayloadSerializer().DeserializeVisibilityMemo(&DataBlob{})
+	assert.NoError(t, err)
+	assert.NotNil(t, memo)
+	assert.Empty(t, memo.Fields)
+}
+
 func generateTestHistoryEvent(id int64) *types.HistoryEvent {
 	return &types.HistoryEvent{
 		ID:        id,

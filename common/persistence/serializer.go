@@ -195,6 +195,9 @@ func (t *serializerImpl) SerializeVisibilityMemo(memo *types.Memo, encodingType 
 }
 
 func (t *serializerImpl) DeserializeVisibilityMemo(data *DataBlob) (*types.Memo, error) {
+	if data == nil || len(data.Data) == 0 {
+		return &types.Memo{}, nil
+	}
 	var memo types.Memo
 	err := t.deserialize(data, &memo)
 	return &memo, err

@@ -168,7 +168,7 @@ func TestRecordWorkflowExecutionUninitialized(t *testing.T) {
 }
 
 func TestUpsertWorkflowExecution(t *testing.T) {
-	visibilityStore, _ := setupNoSQLVisibilityStoreMocks(t)
+	visibilityStore, db := setupNoSQLVisibilityStoreMocks(t)
 
 	err := visibilityStore.UpsertWorkflowExecution(context.Background(), &persistence.InternalUpsertWorkflowExecutionRequest{
 		SearchAttributes: map[string][]byte{
@@ -178,10 +178,45 @@ func TestUpsertWorkflowExecution(t *testing.T) {
 
 	assert.NoError(t, err)
 
-	err = visibilityStore.UpsertWorkflowExecution(context.Background(), &persistence.InternalUpsertWorkflowExecutionRequest{})
+	startTime := time.Unix(100, 1)
+	executionTime := time.Unix(101, 2)
+	updateTime := time.Unix(102, 3)
+	scheduledTime := time.Unix(103, 4)
+	db.EXPECT().
+		InsertVisibility(gomock.Any(), int64((20*time.Minute).Seconds())+openExecutionTTLBuffer, gomock.Any()).
+		DoAndReturn(func(_ context.Context, _ int64, row *nosqlplugin.VisibilityRowForInsert) error {
+			assert.Equal(t, testDomainID, row.DomainID)
+			assert.Equal(t, testWorkflowID, row.WorkflowID)
+			assert.Equal(t, testRunID, row.RunID)
+			assert.Equal(t, testWorkflowTypeName, row.TypeName)
+			assert.Equal(t, testTaskListName, row.TaskList)
+			assert.Equal(t, startTime, row.StartTime)
+			assert.Equal(t, executionTime, row.ExecutionTime)
+			assert.Equal(t, updateTime, row.UpdateTime)
+			assert.Equal(t, scheduledTime, row.ScheduledExecutionTime)
+			assert.Equal(t, types.WorkflowExecutionStatusStarted, row.ExecutionStatus)
+			assert.Equal(t, int16(2), row.ShardID)
+			assert.Contains(t, row.SearchAttributes, "CustomKeyword")
+			return nil
+		})
 
-	assert.Error(t, err)
-	assert.Equal(t, persistence.ErrVisibilityOperationNotSupported, err)
+	err = visibilityStore.UpsertWorkflowExecution(context.Background(), &persistence.InternalUpsertWorkflowExecutionRequest{
+		DomainUUID:                  testDomainID,
+		WorkflowID:                  testWorkflowID,
+		RunID:                       testRunID,
+		WorkflowTypeName:            testWorkflowTypeName,
+		StartTimestamp:              startTime,
+		ExecutionTimestamp:          executionTime,
+		WorkflowTimeout:             20 * time.Minute,
+		TaskList:                    testTaskListName,
+		UpdateTimestamp:             updateTime,
+		SearchAttributes:            map[string][]byte{"CustomKeyword": []byte(`"value"`)},
+		ShardID:                     2,
+		ExecutionStatus:             types.WorkflowExecutionStatusStarted,
+		ScheduledExecutionTimestamp: scheduledTime.UnixNano(),
+	})
+
+	assert.NoError(t, err)
 }
 
 func TestListOpenWorkflowExecutions_Success(t *testing.T) {

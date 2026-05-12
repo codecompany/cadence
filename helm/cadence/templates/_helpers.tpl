@@ -37,8 +37,9 @@ Common labels
 {{- define "cadence.labels" -}}
 helm.sh/chart: {{ include "cadence.chart" . }}
 {{ include "cadence.selectorLabels" . }}
-{{- if .Chart.AppVersion }}
-app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
+{{- $appVersion := .Values.global.appVersion | default .Chart.AppVersion }}
+{{- if $appVersion }}
+app.kubernetes.io/version: {{ $appVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- end }}

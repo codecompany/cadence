@@ -5,6 +5,9 @@ fullnameOverride: ~
 
 # Global configuration
 global:
+  # -- Override app.kubernetes.io/version labels. Defaults to Chart.appVersion.
+  appVersion: ""
+
   # -- Global image configuration (shared only by Cadence Server services [frontend, worker, matching and history])
   image:
     repository: "docker.io/ubercadence/server"
